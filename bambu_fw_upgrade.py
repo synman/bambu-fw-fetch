@@ -12,7 +12,7 @@ Usage:
     All positional args override the corresponding secret.
 
     Update a stored value:
-        python3 ../bambu-printer-manager/secrets.py set bambu-a1-printer_access_code <NEW_CODE>
+        python3 ~/ai/isaac/services/secrets.py set bambu-a1-printer_access_code --value '<NEW_CODE>'
 
 Examples:
     python3 bambu_fw_upgrade.py --printer bambu-a1-printer.shellware.com
@@ -33,13 +33,19 @@ import time
 
 import paho.mqtt.client as mqtt
 
-# secrets.py lives alongside this script (symlinked from bambu-printer-manager)
-sys.path.insert(0, os.path.dirname(__file__))
-from secrets import _keychain_get, _svc  # type: ignore # noqa: E402
+import subprocess
 
 
 def _secret(key: str) -> str | None:
-    return _keychain_get(_svc(key))
+    try:
+        result = subprocess.run(
+            ["python3", os.path.expanduser("~/ai/isaac/services/secrets.py"), "get", key],
+            capture_output=True, text=True, check=True,
+        )
+        value = result.stdout.strip()
+        return value if value else None
+    except subprocess.CalledProcessError:
+        return None
 
 
 def send_upgrade(host: str, serial: str, access_code: str, url: str, version: str) -> None:

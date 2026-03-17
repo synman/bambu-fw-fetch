@@ -1,1 +1,0 @@
-/Users/shell/bambu-printer-manager/secrets.py
