@@ -5,18 +5,17 @@ bambu_fw_upgrade.py — send upgrade_confirm MQTT command to a Bambu Lab printer
 Usage:
     python3 bambu_fw_upgrade.py [--printer <hostname>] [ip] [serial] [access_code] [manifest_url] [version]
 
-    --printer  Full printer hostname (e.g. bambu-a1-printer.shellware.com).
-               The hostname label (e.g. bambu-a1-printer) is used as the secret key prefix:
-               <label>_serial, <label>_access_code, <label>_fw_manifest_url, <label>_fw_version
+    --printer  Full printer hostname (e.g. a1-printer.example.com).
+               The hostname label (e.g. a1-printer), upper-cased with '-' as '_', prefixes the
+               environment variables that hold each value:
+               <LABEL>_IP, <LABEL>_SERIAL, <LABEL>_ACCESS_CODE, <LABEL>_FW_MANIFEST_URL, <LABEL>_FW_VERSION
+               (for a1-printer: A1_PRINTER_SERIAL and so on).
                The hostname itself is used as the MQTT host unless overridden by positional [ip].
-    All positional args override the corresponding secret.
+    All positional args override the corresponding environment variable.
 
-    Update a stored value:
-        python3 ~/ai/isaac/services/secrets.py set bambu-a1-printer_access_code --value '<NEW_CODE>'
-
-Examples:
-    python3 bambu_fw_upgrade.py --printer bambu-a1-printer.shellware.com
-    python3 bambu_fw_upgrade.py --printer bambu-h2d-printer.shellware.com
+Example:
+    A1_PRINTER_SERIAL=... A1_PRINTER_ACCESS_CODE=... A1_PRINTER_FW_MANIFEST_URL=... \\
+    A1_PRINTER_FW_VERSION=... python3 bambu_fw_upgrade.py --printer a1-printer.example.com
 
 The printer downloads the manifest and components from the CDN, verifies BIMH signatures,
 and applies the update. Works in LAN mode with outbound internet access (CDN is public).
@@ -33,19 +32,10 @@ import time
 
 import paho.mqtt.client as mqtt
 
-import subprocess
-
-
-def _secret(key: str) -> str | None:
-    try:
-        result = subprocess.run(
-            ["python3", os.path.expanduser("~/ai/isaac/services/secrets.py"), "get", key],
-            capture_output=True, text=True, check=True,
-        )
-        value = result.stdout.strip()
-        return value if value else None
-    except subprocess.CalledProcessError:
-        return None
+def _setting(label: str, key: str) -> str | None:
+    """Value of <LABEL>_<KEY> from the environment, label upper-cased with '-' as '_'."""
+    name = f"{label}_{key}".upper().replace("-", "_")
+    return os.environ.get(name) or None
 
 
 def send_upgrade(host: str, serial: str, access_code: str, url: str, version: str) -> None:
@@ -103,12 +93,12 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(0)
 
-    # --printer flag — accepts full hostname e.g. bambu-a1-printer.shellware.com
+    # --printer flag — accepts full hostname e.g. a1-printer.example.com
     hostname = None
     if "--printer" in args:
         idx = args.index("--printer")
         if idx + 1 >= len(args):
-            print("[!] --printer requires a hostname (e.g. bambu-a1-printer.shellware.com)")
+            print("[!] --printer requires a hostname (e.g. a1-printer.example.com)")
             sys.exit(1)
         hostname = args[idx + 1]
         args = args[:idx] + args[idx + 2:]
@@ -129,23 +119,23 @@ if __name__ == "__main__":
         args = [a for a in args if a != "--dry-run"]
 
     if not hostname and not args:
-        print("[!] --printer <hostname> is required (e.g. bambu-a1-printer.shellware.com)")
+        print("[!] --printer <hostname> is required (e.g. a1-printer.example.com)")
         sys.exit(1)
 
-    # Derive secret prefix: strip domain suffix, use hostname label as key prefix
+    # Setting prefix: strip domain suffix, use hostname label
     p = hostname.split(".")[0] if hostname else None
 
-    _host   = args[0] if len(args) > 0 else (hostname or _secret(f"{p}_ip"))
-    _serial = args[1] if len(args) > 1 else _secret(f"{p}_serial")
-    _code   = args[2] if len(args) > 2 else _secret(f"{p}_access_code")
-    _url    = url_override or (args[3] if len(args) > 3 else _secret(f"{p}_fw_manifest_url"))
-    _ver    = args[4] if len(args) > 4 else _secret(f"{p}_fw_version")
+    _host   = args[0] if len(args) > 0 else (hostname or _setting(p, "ip"))
+    _serial = args[1] if len(args) > 1 else _setting(p, "serial")
+    _code   = args[2] if len(args) > 2 else _setting(p, "access_code")
+    _url    = url_override or (args[3] if len(args) > 3 else _setting(p, "fw_manifest_url"))
+    _ver    = args[4] if len(args) > 4 else _setting(p, "fw_version")
 
     missing = [k for k, v in [("serial", _serial), ("access_code", _code),
                                ("manifest_url", _url), ("version", _ver)] if not v]
     if missing:
         print(f"[!] Missing values for '{p}': {', '.join(missing)}")
-        print(f"    Store them with: python3 secrets.py set {p}_<key> <value>")
+        print(f"    Pass them as arguments or set {p.upper().replace('-', '_')}_<KEY> in the environment.")
         sys.exit(1)
 
     if dry_run:

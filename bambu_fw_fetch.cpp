@@ -36,7 +36,7 @@ typedef int   (*func_get_printer_firmware)(void* agent, std::string dev_id,
 
 static std::string home() {
     const char* h = std::getenv("HOME");
-    return h ? h : "/Users/shell";
+    return h ? h : "";
 }
 
 template<typename T>
